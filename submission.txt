@@ -1,0 +1,356 @@
+# Denial-of-Service (DoS)
+
+Attackers can prevent access to a service by overwhelming it with requests or by exploiting a 
+vulnerability to crash it.
+
+Reasons for a DoS vulneability can range from unnecessary exposure to services, to a lack of 
+rate limiting, to a failure to handle high traffic loads.
+
+This example demonstrates a DoS vulnerabilities and how it can be exploited.
+
+## What is the vulnerability?
+
+Consider the GET route function in the web server **insecure.ts**:
+
+```
+app.get('/userinfo', async (req: Request, res: Response) => {
+  const { id } = req.query;
+
+  const uid = id as string;
+
+  const user = await User.findOne({ _id: uid }).exec();
+
+  if (user) {
+    res.send(`User: ${user}`);
+  } else {
+    res.status(401).send('User not found');
+  }
+});
+```
+
+The `id` used in the MongoDB query `User.findOne` is expected to be a valid MongoDB query. 
+However, since there is no error handling, if the incoming request has a an id string that 
+is an invalid MongoDB ID then the server will crash. A malicious actor can spam the server 
+with such invalid ID strings, continuously crashing it, and deny the service to legitimate 
+users.
+
+In the secure version **secure.ts** this vulnerability is prevented by adding proper exception 
+handling and by adding a rate lmiter, which limits every client to sending a specific number 
+of requests per unit time.
+
+## For you to do
+
+Steps to reproduce:
+
+1. Install all dependencies
+
+    `$ npm install`
+
+2. Ignore if you have already done this once. Insert test data in the MongoDB database. Make 
+sure the mongod is up and running by typing the `mongosh` command in the termainal. If 
+mongod process is up then you will see that the connection was successful. Command to insert 
+test data:
+
+    `$ npx ts-node insert-test-users.ts`
+
+This will create a database in MongoDB called __infodisclosure__. Verify its presence by 
+connecting with mongosh and running the command `show dbs;`.
+
+2. Start the **insecure.ts** server
+
+    `$ npx ts-node insecure.ts`
+
+3. In the browser, pretend to be a hacker and type a malicious request
+
+    ```
+        http://localhost:3000/userinfo?id[$ne]=
+    ```
+
+4. Do you see the server crashing? Yes
+
+5. Repeat the steps with **secure.ts**. Is the threat removed? How? Yes, this threat is 
+removed. The code uses a try catch block to sanitize the ID.
+
+# Information Disclosure
+Information Disclosure refers to the unauthorized exposure or leakage of sensitive information, 
+such as personal data or system details, to unintended parties.
+
+This example demonstrates information disclosure by injecting malicious query objects to a 
+NoSQL database.
+
+## What is the vulnerability?
+
+Consider the following code snippet in **insecure.ts**:
+
+```
+app.get('/userinfo', async (req: Request, res: Response) => {
+  const { username } = req.query;
+  console.log(username);
+
+  // Vulnerable code: Directly using user-provided values in the query
+  const user = await User.findOne({ username: username as string }).exec();
+
+  if (user) {
+    res.send(`User: ${user}`);
+  } else {
+    res.status(401).send('Invalid username or password');
+  }
+});
+```
+
+The MongoDB query `User.findOne()` depends on a variable whose value is provided by an 
+incoming request. If this value is a valid MongoDB filter condition then the query will 
+potentially be executed by an attacker controlled filter condition thereby disclosing 
+information to an unauthorized entity.
+
+There are several ways to prevent this vulnerability. If the data stored is sensitive then 
+we must encrypt it to reduce the damage in the event of a disclosure. Or else we can ensure 
+that all queries use only sanitized inputs. The latter approach is encoded in **secure.ts**. 
+
+## For you to do
+
+Steps to reproduce:
+
+1. Install all dependencies
+
+    `$ npm install`
+
+2. Insert test data in the MongoDB database. Make sure the mongod is up and running by typing 
+the `mongosh` command in the termainal. If mongod process is up then you will see that the 
+connection was successful. Command to insert test data:
+
+    `$ npx ts-node insert-test-users.ts`
+
+This will create a database in MongoDB called __infodisclosure__. Verify its presence by 
+connecting with mongosh and running the command `show dbs;`.
+
+2. Start the **insecure.ts** server
+
+    `$ npx ts-node insecure.ts`
+
+3. In the browser, pretend to be a hacker and type a malicious request
+
+    ```
+        http://localhost:3000/userinfo?username[$ne]=
+    ```
+
+4. Do you see user information being displayed despite the malicious request not having a 
+valid username in the request? Yes
+
+5. Repeat the steps with **secure.ts**. Is the attack still successful? Why? No, the attack 
+isn't successful anymore because again the try catch block and the 
+"const sanitizedUsername = username.replace(/[^\w\s]/gi, '');" line sanitizes the username 
+input and prevents SQL injection.
+
+# Privilege Escalation
+Unauthorized elevation of privileges, granting access to resources or actions beyond the 
+intended level of authorization.
+
+Few reasons for this threat are - implementation weaknesses, absence of authorization, 
+exposing services that do not need to be.
+
+This example demonstrates privilege escalation due to absence of meaningful authorization.
+
+## What is the vulnerability?
+
+The web server in **insecure.ts** has a POST service that allows users with `admin` role to 
+update the role of existing users. The following code snippet illustrates this:
+
+```
+app.post('/update-role', (req: Request, res: Response) => {
+  const { userId, newRole } = req.body;
+
+  // Simulated authentication (insecure)
+  const user = users.find(u => u.id === Number(userId));
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  // Simulated authorization (insecure)
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  // Update user role (vulnerable to privilege escalation)
+  user.role = newRole;
+  res.json({ message: 'User role updated successfully' });
+});
+```
+
+The user role conditional check is based on the incoming request, which is inherently 
+untrusted. This implies that an existing user with any role can masquerade as admin 
+(elevate their privilege) and change roles of existing users. 
+
+The secure version in **secure.ts** addresses this issue by retrieving a user's role from 
+correctly authenticated client using the concept of sesisons. This implies that only an admin 
+can change user roles as they will have to first authenticate as an admin to obtain a valid 
+session token/ID. As long as the sessions (cookies) are correctly configured, this approach 
+will prevent privilege escalation.
+
+## For you to do
+
+Steps to reproduce:
+
+1. Install all dependencies
+
+    `$ npm install`
+
+2. Start the **insecure.ts** server
+
+    `$ npx ts-node insecure.ts`
+
+3. In the browser, send a GET request
+
+    ```
+        http://localhost:3000/send-form
+    ```
+
+4. Try different UserIds and see which one gives you authorized access to change the role of 
+that user.
+
+5. Repeat the steps with **secure.ts**. Why does this version prevent privilege escalation? It 
+checks the session to see if the user is logged in. If the user isn't logged in as the admin, 
+it throws the 401 unauthorized error no matter what the form input is.
+
+# Repudiation
+
+Non-repudiation refers to the ability of systems to hold people accountable to their actions. 
+E.g., Malicious user deletes sensitive information, but the system cannot track down the user. 
+
+Systems can be non-repudiable for several reasons ranging from insufficient logging, logs 
+vulnerable to tampering, lack of audit policies, etc. The example demonstrates a vulnerability 
+that can lead to non-repudiation by malicious users attempting to access the services provided 
+by a server without leaving trace.
+
+## What is the vulnerability?
+
+The web server in **insecure.ts** defines a POST and GET service to send and receive messages, 
+respectively. However, it does not keep track of the requests received or the responses sent. 
+The secure version in **secure.ts** addresses this issue by defining a middleware for 
+logging. The middleware intercepts each incoming request and logs the IP address and the time 
+the request was made. This ensures that in the event of a security attack, the logs can be 
+inspected to trace the potential attacker.
+
+## For you to do
+
+Steps to reproduce:
+
+1. Install all dependencies
+
+    `$ npm install`
+
+2. Run the server __insecure.ts__.
+
+3. Pretend to be a malicous user and interact with the services by sending requests from the 
+browser.
+
+4. Do you think your actions can be repudiated? Yes, they can be. The server only tracks the 
+user-provided name and message for the post request, and so there's no way to trace a message 
+back to the actual user. There is also no logging for when a user requests to get messages.
+
+# Spoofing
+
+This example demonstrates spoofind through two ways -- Stealing cookies programmatically and 
+cross site request forgery (CSRF).
+
+## Steps to reproduce the vulnerability
+
+1. Install dependencies
+
+    `$ npx install`
+
+2. Start the **insecure.ts** server
+
+    `npx ts-node insecure.ts`
+
+3. Start the malicious server **mal.ts**
+
+    `npx ts-node mal.ts`
+
+4. Open __http://localhost:8000__ in a browser, type a name and Submit.
+
+5. Open the __Application__ tab in the Browser's inspect pane. Find the __Cookies__ under 
+__Storage__. You should see a __connect.sid__ cookie being set.
+
+6. Open the HTML file __mal-steal-cookie.html__ file in the same browser (different tab). Open 
+inspect and view the console.
+
+7. Click the link in the HTML file. Do you see the cookie being stolen in the console? Yes
+
+8. Open the HTML file __mal-csrf.html__ file in the same browser (different tab). What do you 
+see if the user has not logged out of **insecure.ts**? What do you see if the user has logged 
+out? In both cases, the cookies are still preserved.
+
+
+## For you to answer
+
+1. Briefly explain the spoofing vulnerability in **insecure.ts**. 
+secret: session secret is hardcoded in the source code
+httpOnly: cookie has httpOnly: false, which determines whether client-side scripts can access 
+the cookie's value
+sameSite: cookie does not set sameSite: true, which determines how cookie can be sent with 
+cross-site requests
+2. Briefly explain different ways in which vulnerability can be exploited.
+secret: with access to the soure code where secret is hardcoded, an attacker can create 
+cookies that pass the secret verification check, allowing them to impersonate any user
+httpOnly: if the attacker can somehow inject javascript into the site, they can steal the 
+cookie and use them to impersonate the user
+sameSite: the attacker can create requests from their site to the target server, which will 
+send your cookies from your browser to verify your identity, allowing them to use your browser 
+to perform actions
+3. Briefly explain why **secure.ts** does not have the spoofing vulnerability in **insecure.ts**.
+secret: secure.ts does not hardcode the secret by taking it from the program args
+httpOnly: secure.ts sets httpOnly to true so the cookie can't be accessed with a script
+sameSite: secure.ts sets sameSite to true so cookies can only be sent within the same site, 
+thus requests can't be made cross-site.
+
+# Tampering
+Attackers can change or tamper with the application’s inputs to cause unintended behavior.
+
+Tampering can occurs in a number of ways. This example demonstrates tampering through script 
+injection.
+
+## What is the vulnerability?
+
+Consider the following code snippet in **insecure.ts**:
+
+```
+app.post("/register", (req: Request, res: Response) => {
+  req.session.user = req.body.name.trim();
+  res.send(`<p>Thank you</p> <a href="/">Back home</a>`);
+});
+```
+
+Note the server session object's `user` property is being populated with with a string from 
+an incoming request (from some client). This incoming string is inherently untrustworthy as 
+it could be sent by a malicious program. Particularly if the incoming string is a script and 
+the server program uses (executes) the `user` property then script will end up being 
+executed inadvertently. This is called a script injection attack. 
+
+The most effective way to prevent tampering via script injection is to sanitize the incoming 
+inputs from potentially untrustworthy sources. Sanitizing inputs means that the program should 
+have a whitelist of inputs it will accept and reject everything else. The server 
+**secure.ts** does exactly this.
+
+## For you to do
+
+Steps to reproduce:
+
+1. Install all dependencies
+
+    `npm install`
+
+2. Start the **insecure.ts** server
+
+    `npx ts-node insecure.ts`
+
+3. In the browser, type a potentially malicious script in the name field of the form
+
+    ```
+        <script> document.body.innerHTML = "<a href='https://google.com'> Gotcha </a>"</script>
+    ```
+
+4. Do you see the potentially malicious hyperlink being injected into the form? Repeat the same 
+steps with **secure.ts**. Do you see any difference. Why? Yes, submitting the script in the 
+name field and clicking "Back home" causes the hyperlink to be injected in insecure.ts. This 
+doesn't happen with secure.ts because the escapeHTML sanitizes the req.body.name.trim() call.
