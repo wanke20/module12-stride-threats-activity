@@ -36,4 +36,4 @@ Steps to reproduce:
         <script> document.body.innerHTML = "<a href='https://google.com'> Gotcha </a>"</script>
     ```
 
-4. Do you see the potentially malicious hyperlink being injected into the form? Repeat the same steps with **secure.ts**. Do you see any difference. Why?
+4. Do you see the potentially malicious hyperlink being injected into the form? Repeat the same steps with **secure.ts**. Do you see any difference. Why? Yes, submitting the script in the name field and clicking "Back home" causes the hyperlink to be injected in insecure.ts. This doesn't happen with secure.ts because the escapeHTML sanitizes the req.body.name.trim() call.

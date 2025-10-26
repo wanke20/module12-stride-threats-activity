@@ -20,4 +20,4 @@ Steps to reproduce:
 
 3. Pretend to be a malicous user and interact with the services by sending requests from the browser.
 
-4. Do you think your actions can be repudiated?
+4. Do you think your actions can be repudiated? Yes, they can be. The server only tracks the user-provided name and message for the post request, and so there's no way to trace a message back to the actual user. There is also no logging for when a user requests to get messages.
